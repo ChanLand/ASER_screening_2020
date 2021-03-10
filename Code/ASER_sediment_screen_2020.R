@@ -37,17 +37,6 @@ sal_tall <- sal %>%
 # start with the SSLs and SALs, then deal with the BCGs and figure out if we want to use the recreational SSLs too
 
 # Rads - here do an inner join with SALs
-# rad_scr <- sed %>%
-#   inner_join(sal_tall, by = c('parameter_name' = 'radionuclide')) %>%
-#   mutate(exceedance = ifelse((report_result > SAL_value & detect_flag == 'Y'), 1, 0)) 
-# 
-# rad_wide <- rad_scr %>%
-#   select(-SAL_value) %>%
-#   pivot_wider(names_from = 'SAL_cat', values_from = 'exceedance') %>%
-#   mutate(exceed = ifelse(rowSums(across(35:38), na.rm = TRUE) >= 1, 1, 0))%>%
-#   group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
-#   summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-
 rad_screen <- function(sediment_data){
   init_screen <- sediment_data %>%
     inner_join(sal_tall, by = c('parameter_name' = 'radionuclide')) %>%
