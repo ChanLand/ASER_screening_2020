@@ -51,7 +51,7 @@ sal_tall <- sal %>%
 rad_screen <- function(sediment_data){
   init_screen <- sediment_data %>%
     inner_join(sal_tall, by = c('parameter_name' = 'radionuclide')) %>%
-    mutate(exceedance = ifelse((report_result > SAL_value & detect_flag == 'Y'), 1, 0)) 
+    mutate(exceedance = ifelse((!is.na(SAL_value) & report_result > SAL_value & detect_flag == 'Y'), 1, 0)) 
   if (sum(init_screen$exceedance) == 0) {
     print('No radionuclide exceedances!')
   } else {
@@ -64,4 +64,53 @@ rad_screen <- function(sediment_data){
     return(init_screen_wide)
   }
 }
+
+rad_screen_results <- rad_screen(sed)
+
+#########################################
+# Inorganics and organics screened to SSLs - ASER text says that anything without an SSL gets screened to EPA standards 
+# Need to look in to what those would be - for now, do an inner join, and figure that out later
+
+# Might be easiest to do inorganic and organic separately 
+# Inorgs can be joined by parameter_name, orgs need to be joined by parameter_code
+ssl_inorg_screen <- function(sediment_data) {
+  init_screen <- sediment_data %>% 
+    filter(parameter_category == 'INORGANIC') %>%
+    inner_join(ssl_tall, by = c('parameter_name' = 'chemical')) %>%
+    mutate(exceedance = ifelse((!is.na(SSL_value) & report_result > SSL_value & detect_flag == 'Y'), 1, 0)) 
+  if (sum(init_screen$exceedance) == 0) {
+    print('No inorganic exceedances!')
+  } else {
+    init_screen_wide <- init_screen %>%
+      select(-SSL_value) %>%
+      pivot_wider(names_from = 'SSL_cat', values_from = 'exceedance') %>%
+      mutate(exceed = ifelse(rowSums(across(36:41), na.rm = TRUE) >= 1, 1, 0))%>%
+      group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
+      summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
+    return(init_screen_wide)
+  }
+}
+
+inorg_screen_results <- ssl_inorg_screen(sed)
+
+###########
+ssl_org_screen <- function(sediment_data) {
+  init_screen <- sediment_data %>% 
+    filter(parameter_category == 'ORGANIC') %>%
+    inner_join(ssl_tall, by = c('parameter_code' = 'cas')) %>%
+    mutate(exceedance = ifelse((!is.na(SSL_value) & report_result > SSL_value & detect_flag == 'Y'), 1, 0)) 
+  if (sum(init_screen$exceedance) == 0) {
+    print('No organic exceedances!')
+  } else {
+    init_screen_wide <- init_screen %>%
+      select(-SSL_value) %>%
+      pivot_wider(names_from = 'SSL_cat', values_from = 'exceedance') %>%
+      mutate(exceed = ifelse(rowSums(across(36:41), na.rm = TRUE) >= 1, 1, 0))%>%
+      group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
+      summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
+    return(init_screen_wide)
+  }
+}
+
+org_screen_results <- ssl_org_screen(sed)
 
