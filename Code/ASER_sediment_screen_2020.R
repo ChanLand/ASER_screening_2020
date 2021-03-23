@@ -51,7 +51,7 @@ rad_screen <- function(sediment_data){
       mutate(exceed = ifelse(rowSums(across(35:38), na.rm = TRUE) >= 1, 1, 0))%>%
       group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
       summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-    return(init_screen_wide)
+    return(list(init_screen, init_screen_wide))
   }
 }
 
@@ -77,11 +77,14 @@ ssl_inorg_screen <- function(sediment_data) {
       mutate(exceed = ifelse(rowSums(across(36:41), na.rm = TRUE) >= 1, 1, 0))%>%
       group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
       summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-    return(init_screen_wide)
+    return(list(init_screen, init_screen_wide))
   }
 }
 
 inorg_screen_results <- ssl_inorg_screen(sed)
+
+inorg_all_screen <- inorg_screen_results[[1]]
+inorg_screen_counts <- inorg_screen_results[[2]]
 
 # Are there inorganics without an SSL?
 test_inorg <- sed %>% 
@@ -106,11 +109,14 @@ ssl_org_screen <- function(sediment_data) {
       mutate(exceed = ifelse(rowSums(across(36:41), na.rm = TRUE) >= 1, 1, 0))%>%
       group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
       summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-    return(init_screen_wide)
+    return(list(init_screen, init_screen_wide))
   }
 }
 
 org_screen_results <- ssl_org_screen(sed)
+
+org_all_screen <- org_screen_results[[1]]
+org_screen_counts <- org_screen_results[[2]]
 
 # Are there organics without an SSL?
 test_org <- sed %>% 
@@ -145,7 +151,7 @@ bcg_screen <- function(sediment_data){
       mutate(exceed = ifelse(rowSums(across(35:38), na.rm = TRUE) >= 1, 1, 0))%>%
       group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
       summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-    return(init_screen_wide)
+    return(list(init_screen, init_screen_wide))
   }
 }
 
