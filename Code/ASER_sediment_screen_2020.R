@@ -5,6 +5,7 @@
 # Load libraries
 library(readr)
 library(readxl)
+library(writexl)
 library(dplyr)
 library(tidyr)
 library(lubridate)
@@ -25,6 +26,15 @@ ssl <- read_excel('Data/RS11941_NMED SSLs June 2019_for_analysis.xlsx') %>%
 names(ssl) %<>%
   str_replace_all("\\s", "_") %>% tolower()
 
+# Some SSLs need to be renamed to match sed data - confirmed with chemists that these matches are correct
+ssl <- ssl %>%
+  mutate(chemical = case_when(
+    chemical == 'Mercury (elemental)' ~ 'Mercury',
+    chemical == 'Chromium (Total)' ~ 'Chromium',
+    chemical == 'Uranium (soluable salts)' ~ 'Uranium',
+    TRUE ~ as.character(chemical)
+  ))
+
 ssl_tall <- ssl %>%
   pivot_longer(cols = c(3:8), names_to = 'SSL_cat', values_to = 'SSL_value')
 
@@ -35,7 +45,8 @@ sal <- read_excel('Data/screening_action_limits.xlsx') %>%
 sal_tall <- sal %>%
   pivot_longer(cols = c(2:5), names_to = "SAL_cat", values_to = 'SAL_value')
 
-# start with the SSLs and SALs, then deal with the BCGs and figure out if we want to use the recreational SSLs too
+# start with the SSLs and SALs, then deal with the BCGs and figure out if we want to use the recreational SSLs too 
+# we will NOT be using recreational SSLs
 
 # Rads - here do an inner join with SALs
 rad_screen <- function(sediment_data){
@@ -86,13 +97,16 @@ inorg_screen_results <- ssl_inorg_screen(sed)
 inorg_all_screen <- inorg_screen_results[[1]]
 inorg_screen_counts <- inorg_screen_results[[2]]
 
+# Save output
+write_xlsx(inorg_all_screen, 'Output/sediment_inorganic_screening.xlsx')
+write_xlsx(inorg_screen_counts, 'Output/sediment_inorganic_exc_counts.xlsx')
+
 # Are there inorganics without an SSL?
 test_inorg <- sed %>% 
   filter(parameter_category == 'INORGANIC') %>%
   left_join(ssl_tall, by = c('parameter_name' = 'chemical')) %>%
   filter(is.na(SSL_cat) & report_units == 'mg/kg')
-
-# Mercury, Chromium, Uranium --> naming issue I need to check on
+# All inorganics have an SSL
 
 ###########
 ssl_org_screen <- function(sediment_data) {
@@ -117,6 +131,10 @@ org_screen_results <- ssl_org_screen(sed)
 
 org_all_screen <- org_screen_results[[1]]
 org_screen_counts <- org_screen_results[[2]]
+
+# Save output
+write_xlsx(org_all_screen, 'Output/sediment_organic_screening.xlsx')
+write_xlsx(org_screen_counts, 'Output/sediment_organic_exc_counts.xlsx')
 
 # Are there organics without an SSL?
 test_org <- sed %>% 
@@ -157,3 +175,95 @@ bcg_screen <- function(sediment_data){
 
 bcg_results <- bcg_screen(sed)
 
+#########################################
+# Screen against Ryti Backgrounds
+ryti <- read_excel('Data/Ryti Soil Backgrounds.xlsx') %>%
+  select(1:4) %>%
+  rename(parameter_name = `mg/kg units`)
+
+ryti_screen <- function(sediment_data) {
+  init_screen <- sediment_data %>%
+    inner_join(ryti, by = c('parameter_name', 'report_units')) %>%
+    mutate(exceedance = ifelse((!is.na(SED) & report_result > SED & detect_flag == 'Y'), 1, 0))
+  if (sum(init_screen$exceedance) == 0) {
+    print('No Ryti background exceedances!')
+  } else {
+    return(init_screen)
+  }
+}
+
+ryti_results <- ryti_screen(sed)
+
+# Save output
+write_xlsx(ryti_results, 'Output/ryti_sed_screening.xlsx')
+
+#########################################
+# For any chemical that didn't have an SSL/SAL, screen against EPA RSL (THQ=0.1)
+rsl <- read_excel('Data/EPA_RSL_THQ0.1_for_analysis.xlsx') %>%
+  select(1:6) %>%
+  rename(residential_key = key...4, industrial_key = key...6) 
+
+rsl_tall <- rsl %>%
+  select(1:3,5) %>%
+  pivot_longer(cols = c(3,4), names_to = 'RSL_cat', values_to = 'RSL_value')
+  
+rsl_key <- rsl %>%
+  select(1:2, 4,6) %>%
+  pivot_longer(cols = c(3,4), names_to = 'key_name', values_to = 'key_val') %>%
+  select(3,4)
+
+rsl_tall <- bind_cols(rsl_tall, rsl_key) 
+rm(rsl_key)
+
+# All the inorganics have an SSL, but quite a few organics don't
+# org_no_ssl <- sed %>% 
+#   filter(parameter_category == 'ORGANIC') %>%
+#   left_join(ssl_tall, by = c('parameter_code' = 'cas')) %>%
+#   filter(is.na(SSL_cat) & report_units == 'mg/kg') %>%
+#   select(1:34) %>%
+#   inner_join(rsl_tall, by = c('parameter_code' = 'CAS No.')) %>%
+#   filter(parameter_name != 'Total PCB') %>%
+#   mutate(exceedance = ifelse((!is.na(RSL_value) & report_result > RSL_value & detect_flag == 'Y'), 1, 0)) 
+# 
+# org_no_ssl_wide <- org_no_ssl %>%
+#   select(-RSL_value, -key_name, -key_val) %>%
+#   pivot_wider(names_from = 'RSL_cat', values_from = 'exceedance') %>%
+#   mutate(exceed = ifelse(rowSums(across(36:37), na.rm = TRUE) >= 1, 1, 0))%>%
+#   group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
+#   summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
+
+rsl_org_screen <- function(sediment_data) {
+  init_screen <- sediment_data %>% 
+    filter(parameter_category == 'ORGANIC') %>%
+    left_join(ssl_tall, by = c('parameter_code' = 'cas')) %>%
+    filter(is.na(SSL_cat) & report_units == 'mg/kg') %>%
+    select(1:34) %>%
+    inner_join(rsl_tall, by = c('parameter_code' = 'CAS No.')) %>%
+    filter(parameter_name != 'Total PCB') %>%
+    mutate(exceedance = ifelse((!is.na(RSL_value) & report_result > RSL_value & detect_flag == 'Y'), 1, 0)) 
+  if (sum(init_screen$exceedance) == 0) {
+    print('No RSL organic exceedances!')
+  } else {
+    init_screen_wide <- init_screen %>%
+      select(-RSL_value, -key_name, -key_val) %>%
+      pivot_wider(names_from = 'RSL_cat', values_from = 'exceedance') %>%
+      mutate(exceed = ifelse(rowSums(across(36:37), na.rm = TRUE) >= 1, 1, 0))%>%
+      group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
+      summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
+    return(list(init_screen, init_screen_wide))
+  }
+}
+
+rsl_results <- rsl_org_screen(sed)
+
+# A lot of the parameters remaining are Total PCBs, but I think the ASER says we don't screen Total PCBs in sed, only congeners... 
+# For now, have filtered out Total PCBs
+
+# Summary - sediment data are screened against NMED SSLs for organics and inorganics
+# There are both organic and inorganic exceedances
+# Rads are screened against LANL SALs and DOE BCGs with McNaughton corrections
+# No rads exceeded SALs or BCGs
+# Anything that didn't have an SSL was screened against EPA RSLs 
+# No RSL exceedances
+# Inorganics were also screened against Ryti backgrounds for reference 
+# Not surprisingly, quite a few background exceedances
