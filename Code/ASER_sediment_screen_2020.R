@@ -15,8 +15,8 @@ library(stringr)
 # import sediment data
 sed <- read_csv('Data/ASER_sediment_2020.csv',
                 col_types = list('sample_date' = col_date("%m/%d/%Y"))) %>%
-                select(3:36) %>%
-                filter(validation_qualifier != 'R')
+                filter(best_value_flag == 'Y', !str_detect(validation_qualifier, '%R%')) %>%
+                select(3:36) 
 
 # import screening standards
 #SSLs are for inorganic and organic
@@ -148,55 +148,6 @@ test_org <- sed %>%
 
 # There are 225 organics without an SSL - lots of PCBs
 
-######################################
-# Screen against BCGs with McNaughton site-specific values
-# Sediment are screened against terrestrial and riparian values
-
-bcg <- read_excel('Data/DOE_BCGs_for_sediment_analysis.xlsx')
-names(bcg) %<>%
-  str_replace_all("\\s", "_") %>% tolower()
-
-bcg_screen <- function(sediment_data){
-  init_screen <- sediment_data %>%
-    inner_join(bcg, by = c('parameter_name' = 'radionuclide')) %>%
-    mutate(exceedance = ifelse((!is.na(bcg_pci_g) & report_result > bcg_pci_g & detect_flag == 'Y'), 1, 0)) 
-  if (sum(init_screen$exceedance) == 0) {
-    print('No BCG exceedances!')
-  } else {
-    init_screen_wide <- init_screen %>%
-      select(-bcg_pci_g) %>%
-      pivot_wider(names_from = 'organism_responsible_for_limiting_dose_in_soil', values_from = 'exceedance') %>%
-      mutate(exceed = ifelse(rowSums(across(35:38), na.rm = TRUE) >= 1, 1, 0))%>%
-      group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
-      summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
-    return(list(init_screen, init_screen_wide))
-  }
-}
-
-bcg_results <- bcg_screen(sed)
-
-#########################################
-# Screen against Ryti Backgrounds
-ryti <- read_excel('Data/Ryti Soil Backgrounds.xlsx') %>%
-  select(1:4) %>%
-  rename(parameter_name = `mg/kg units`)
-
-ryti_screen <- function(sediment_data) {
-  init_screen <- sediment_data %>%
-    inner_join(ryti, by = c('parameter_name', 'report_units')) %>%
-    mutate(exceedance = ifelse((!is.na(SED) & report_result > SED & detect_flag == 'Y'), 1, 0))
-  if (sum(init_screen$exceedance) == 0) {
-    print('No Ryti background exceedances!')
-  } else {
-    return(init_screen)
-  }
-}
-
-ryti_results <- ryti_screen(sed)
-
-# Save output
-write_xlsx(ryti_results, 'Output/ryti_sed_screening.xlsx')
-
 #########################################
 # For any chemical that didn't have an SSL/SAL, screen against EPA RSL (THQ=0.1)
 rsl <- read_excel('Data/EPA_RSL_THQ0.1_for_analysis.xlsx') %>%
@@ -206,7 +157,7 @@ rsl <- read_excel('Data/EPA_RSL_THQ0.1_for_analysis.xlsx') %>%
 rsl_tall <- rsl %>%
   select(1:3,5) %>%
   pivot_longer(cols = c(3,4), names_to = 'RSL_cat', values_to = 'RSL_value')
-  
+
 rsl_key <- rsl %>%
   select(1:2, 4,6) %>%
   pivot_longer(cols = c(3,4), names_to = 'key_name', values_to = 'key_val') %>%
@@ -258,6 +209,56 @@ rsl_results <- rsl_org_screen(sed)
 
 # A lot of the parameters remaining are Total PCBs, but I think the ASER says we don't screen Total PCBs in sed, only congeners... 
 # For now, have filtered out Total PCBs
+
+######################################
+# Screen against BCGs with McNaughton site-specific values
+# Sediment are screened against terrestrial and riparian values
+
+bcg <- read_excel('Data/DOE_BCGs_for_sediment_analysis.xlsx')
+names(bcg) %<>%
+  str_replace_all("\\s", "_") %>% tolower()
+
+bcg_screen <- function(sediment_data){
+  init_screen <- sediment_data %>%
+    inner_join(bcg, by = c('parameter_name' = 'radionuclide')) %>%
+    mutate(exceedance = ifelse((!is.na(bcg_pci_g) & report_result > bcg_pci_g & detect_flag == 'Y'), 1, 0)) 
+  if (sum(init_screen$exceedance) == 0) {
+    print('No BCG exceedances!')
+  } else {
+    init_screen_wide <- init_screen %>%
+      select(-bcg_pci_g) %>%
+      pivot_wider(names_from = 'organism_responsible_for_limiting_dose_in_soil', values_from = 'exceedance') %>%
+      mutate(exceed = ifelse(rowSums(across(35:38), na.rm = TRUE) >= 1, 1, 0))%>%
+      group_by(location_id, parameter_code, parameter_name, sample_purpose) %>%
+      summarize(analyses_n = n(), detect_n = sum(detect_flag == 'Y'), exceed_n = sum(exceed == 1))
+    return(list(init_screen, init_screen_wide))
+  }
+}
+
+bcg_results <- bcg_screen(sed)
+
+#########################################
+# Screen against Ryti Backgrounds
+ryti <- read_excel('Data/Ryti Soil Backgrounds.xlsx') %>%
+  select(1:4) %>%
+  rename(parameter_name = `mg/kg units`)
+
+ryti_screen <- function(sediment_data) {
+  init_screen <- sediment_data %>%
+    inner_join(ryti, by = c('parameter_name', 'report_units')) %>%
+    mutate(exceedance = ifelse((!is.na(SED) & report_result > SED & detect_flag == 'Y'), 1, 0))
+  if (sum(init_screen$exceedance) == 0) {
+    print('No Ryti background exceedances!')
+  } else {
+    return(init_screen)
+  }
+}
+
+ryti_results <- ryti_screen(sed)
+
+# Save output
+write_xlsx(ryti_results, 'Output/ryti_sed_screening.xlsx')
+
 
 # Summary - sediment data are screened against NMED SSLs for organics and inorganics
 # There are both organic and inorganic exceedances
