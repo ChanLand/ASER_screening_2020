@@ -131,6 +131,8 @@ org_screen_results <- ssl_org_screen(sed)
 
 org_all_screen <- org_screen_results[[1]]
 org_screen_counts <- org_screen_results[[2]]
+# Note: looks like the PAHs have 2 analyses each instead of 1 - seems to be because 2 different analysis methods are used.
+# Should be fine to keep everything as is.
 
 # Save output
 write_xlsx(org_all_screen, 'Output/sediment_organic_screening.xlsx')
@@ -206,6 +208,7 @@ rsl_org_screen <- function(sediment_data) {
 }
 
 rsl_results <- rsl_org_screen(sed)
+
 
 # A lot of the parameters remaining are Total PCBs, but I think the ASER says we don't screen Total PCBs in sed, only congeners... 
 # For now, have filtered out Total PCBs
